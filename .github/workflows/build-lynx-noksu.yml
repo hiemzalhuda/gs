@@ -32,14 +32,13 @@ jobs:
             libxml2-utils xsltproc unzip fontconfig lz4 liblz4-tool cpio \
             libssl-dev bc rsync device-tree-compiler lld llvm 2>&1 | tail -2
 
-      - name: Download clang (blu_spark 17.0.6) + gcc
+      - name: Download clang (r487747c, sesuai build.config.constants) + gcc
         run: |
           mkdir -p $HOME/toolchain
           cd $HOME/toolchain
-          curl -sL -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz" || \
-          curl -sL -o clang.tar.gz "https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r547379/archive/refs/heads/lineage-22.2.tar.gz"
-          mkdir -p clang && tar xzf clang.tar.gz -C clang 2>/dev/null || echo "clang extract note"
-          ls clang/bin/clang 2>/dev/null || echo "CLANG-MISSING"
+          curl -sL --max-time 600 -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz"
+          mkdir -p clang && tar xzf clang.tar.gz -C clang
+          ls clang/bin/clang && clang/bin/clang --version | head -2
           git clone --depth 1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64 2>&1 | tail -1
           git clone --depth 1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32 2>&1 | tail -1
 
@@ -57,8 +56,12 @@ jobs:
           export KBUILD_BUILD_HOST=github
           make O=out ARCH=arm64 blu_spark_defconfig
           ./scripts/config --file out/.config -d KSU || true
-          make -j$(nproc) O=out ARCH=arm64 Image.lz4 dtbs 2>&1 | tail -5
+          make -j$(nproc) O=out ARCH=arm64 Image.lz4 dtbs 2>out/build-error.log; EC=$?
+          tail -30 out/build-error.log || true
+          grep -i -m10 "error" out/build-error.log | head -10 || true
+          cp out/build-error.log $GITHUB_WORKSPACE/build-error.log || true
           ls -la out/arch/arm64/boot/Image.lz4
+          exit $EC
 
       - name: Pack AnyKernel3 (lynx)
         run: |
@@ -84,3 +87,11 @@ jobs:
           name: blu_spark-noksu-lynx
           path: blu_spark-noksu-lynx.zip
           retention-days: 14
+
+      - name: Upload build log (selalu, biar gampang debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-error-log
+          path: build-error.log
+          retention-days: 7
