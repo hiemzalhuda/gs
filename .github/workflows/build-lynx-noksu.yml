@@ -49,9 +49,8 @@ jobs:
           export SUBARCH=arm64
           export PATH=$HOME/toolchain/clang/bin:$HOME/toolchain/gcc64/bin:$HOME/toolchain/gcc32/bin:$PATH
           export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-android-
-          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
           export LLVM=1 LLVM_IAS=1
+          # full-LLVM: tanpa CROSS_COMPILE gcc (gcc 4.9 terlalu tua, bikin __stack_chk_guard hilang)
           export KBUILD_BUILD_USER=blu_spark-noksu
           export KBUILD_BUILD_HOST=github
           make O=out ARCH=arm64 blu_spark_defconfig
