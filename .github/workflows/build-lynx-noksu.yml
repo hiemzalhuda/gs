@@ -32,11 +32,11 @@ jobs:
             libxml2-utils xsltproc unzip fontconfig lz4 liblz4-tool cpio \
             libssl-dev bc rsync device-tree-compiler lld llvm 2>&1 | tail -2
 
-      - name: Download clang (r487747c, sesuai build.config.constants) + gcc
+      - name: Download clang (r522817 = clang 17, sesuai defconfig blu_spark) + gcc
         run: |
           mkdir -p $HOME/toolchain
           cd $HOME/toolchain
-          curl -sL --max-time 600 -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r487747c.tar.gz"
+          curl -sL --max-time 900 -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
           mkdir -p clang && tar xzf clang.tar.gz -C clang
           ls clang/bin/clang && clang/bin/clang --version | head -2
           git clone --depth 1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64 2>&1 | tail -1
