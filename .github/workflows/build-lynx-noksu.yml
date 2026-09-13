@@ -32,22 +32,30 @@ jobs:
             libxml2-utils xsltproc unzip fontconfig lz4 liblz4-tool cpio \
             libssl-dev bc rsync device-tree-compiler lld llvm 2>&1 | tail -2
 
-      - name: Download clang (r522817 = clang 17, sesuai defconfig blu_spark) + gcc
+      - name: Download clang (r522817 = clang 17, sesuai defconfig blu_spark)
         run: |
           mkdir -p $HOME/toolchain
           cd $HOME/toolchain
-          curl -sL --max-time 900 -o clang.tar.gz "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
+          URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
+          ok=0
+          for i in 1 2 3 4 5; do
+            echo "percobaan unduh clang ke-$i"
+            curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 \
+                 -C - -o clang.tar.gz "$URL" && \
+              gzip -t clang.tar.gz 2>/dev/null && { ok=1; break; }
+            echo "gagal/terputus, ulangi..."; sleep 10
+          done
+          if [ "$ok" != "1" ]; then echo "UNDUH CLANG GAGAL setelah 5 percobaan"; exit 1; fi
+          echo "ukuran: $(stat -c%s clang.tar.gz) byte"
           mkdir -p clang && tar xzf clang.tar.gz -C clang
           ls clang/bin/clang && clang/bin/clang --version | head -2
-          git clone --depth 1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64 2>&1 | tail -1
-          git clone --depth 1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32 2>&1 | tail -1
 
       - name: Build kernel (blu_spark defconfig, KSU off)
         run: |
           cd $GITHUB_WORKSPACE
           export ARCH=arm64
           export SUBARCH=arm64
-          export PATH=$HOME/toolchain/clang/bin:$HOME/toolchain/gcc64/bin:$HOME/toolchain/gcc32/bin:$PATH
+          export PATH=$HOME/toolchain/clang/bin:$PATH
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export LLVM=1 LLVM_IAS=1
           # full-LLVM: tanpa CROSS_COMPILE gcc (gcc 4.9 terlalu tua, bikin __stack_chk_guard hilang)
