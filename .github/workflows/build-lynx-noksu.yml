@@ -67,29 +67,45 @@ jobs:
           make -j$(nproc) O=out ARCH=arm64 Image.lz4 dtbs 2>&1 | tee $GITHUB_WORKSPACE/build-error.log | grep -i -m5 "error:" || true
           ls -la out/arch/arm64/boot/Image.lz4 2>/dev/null || (echo "===BUILD-GAGAL, 40 baris error:==="; grep -i -m40 "error" $GITHUB_WORKSPACE/build-error.log | head -40; exit 1)
 
-      - name: Pack AnyKernel3 (lynx)
+      - name: Pack AnyKernel3 (lynx, A/B auto-detect)
         run: |
           cd $GITHUB_WORKSPACE
           git clone --depth 1 https://github.com/osm0sis/AnyKernel3.git ak3
-          cp out/arch/arm64/boot/Image.lz4 ak3/
           cd ak3
           rm -f .gitattributes README.md devices.txt
-          # ganti SEMUA device.name* bawaan (AnyKernel3 default = Galaxy Nexus) dengan lynx
-          sed -i '/^device\.name/d' anykernel.sh
-          sed -i 's/^kernel.string=.*/kernel.string=### blu_spark no-KSU battery (lynx) ###/' anykernel.sh
-          sed -i 's/^do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
-          python3 - <<'PYEOF'
-          p = 'anykernel.sh'
-          s = open(p).read()
-          devs = ['lynx', 'Lynx', 'Pixel 7a']
-          blok = "\n".join("device.name%d=%s" % (i+1, d) for i, d in enumerate(devs))
-          s = s.replace("do.devicecheck=1", "do.devicecheck=1\n" + blok, 1)
-          open(p, 'w').write(s)
-          PYEOF
-          echo "--- device yang didukung ---"
-          grep "device.name" anykernel.sh
-          zip -r9 ../blu_spark-noksu-lynx.zip . -x .git/\*
-          cd ..
+
+          # --- kernel image ---
+          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image.lz4 ./Image.lz4
+
+          # --- dtb (kalau build menghasilkannya) ---
+          # AK3 cuma mengaktifkan mode multi-partisi (boot+init_boot+vendor_kernel_boot)
+          # kalau ada FILE bernama persis "dtb" di root zip. blu_spark (kernel Pixel)
+          # umumnya TIDAK menghasilkan dtb dari source, jadi langkah ini boleh kosong.
+          if [ -f $GITHUB_WORKSPACE/out/arch/arm64/boot/dtb ]; then
+            cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtb ./dtb
+            echo "dtb ditemukan -> mode multi-partisi otomatis akan aktif"
+          else
+            echo "dtb tidak ada -> hanya partisi boot yang di-flash (normal untuk kernel Pixel)"
+          fi
+
+          # --- anykernel.sh dari repo (BUKAN template Galaxy Nexus bawaan AK3) ---
+          cp $GITHUB_WORKSPACE/anykernel/anykernel.sh ./anykernel.sh
+
+          echo "=== parameter penting anykernel.sh ==="
+          grep -E "^(BLOCK|IS_SLOT_DEVICE|device\.name|kernel\.string|do\.devicecheck)" anykernel.sh
+
+          echo "=== pastikan tidak ada sisa Galaxy Nexus di baris AKTIF ==="
+          if grep -nE "omap_hsmmc|init\.tuna|fstab\.tuna" anykernel.sh | grep -vE ":\s*#"; then
+            echo "GAGAL: masih ada sisa template Galaxy Nexus di baris aktif"; exit 1
+          fi
+          echo "BERSIH: tidak ada sisa Galaxy Nexus di baris aktif"
+
+          rm -f ramdisk/placeholder modules/system/lib/modules/placeholder 2>/dev/null || true
+
+          zip -r9 $GITHUB_WORKSPACE/blu_spark-noksu-lynx.zip . -x .git/\*
+          cd $GITHUB_WORKSPACE
+          echo "=== isi ZIP ==="
+          unzip -l blu_spark-noksu-lynx.zip | head -22
           ls -la blu_spark-noksu-lynx.zip
 
       - name: Upload artifact
