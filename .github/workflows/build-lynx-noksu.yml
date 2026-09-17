@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/build-lynx-noksu.yml'
       - 'arch/arm64/configs/blu_spark_defconfig'
+      - 'anykernel/anykernel.sh'
 
 jobs:
   build:
@@ -32,23 +33,61 @@ jobs:
             libxml2-utils xsltproc unzip fontconfig lz4 liblz4-tool cpio \
             libssl-dev bc rsync device-tree-compiler lld llvm 2>&1 | tail -2
 
-      - name: Download clang (r522817 = clang 17, sesuai defconfig blu_spark)
+      - name: Download clang (r522817)
         run: |
+          set -e
           mkdir -p $HOME/toolchain
           cd $HOME/toolchain
-          URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
-          ok=0
-          for i in 1 2 3 4 5; do
-            echo "percobaan unduh clang ke-$i"
-            curl -fL --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 900 \
-                 -C - -o clang.tar.gz "$URL" && \
-              gzip -t clang.tar.gz 2>/dev/null && { ok=1; break; }
-            echo "gagal/terputus, ulangi..."; sleep 10
-          done
-          if [ "$ok" != "1" ]; then echo "UNDUH CLANG GAGAL setelah 5 percobaan"; exit 1; fi
-          echo "ukuran: $(stat -c%s clang.tar.gz) byte"
-          mkdir -p clang && tar xzf clang.tar.gz -C clang
-          ls clang/bin/clang && clang/bin/clang --version | head -2
+
+          # Sumber resmi (satu-satunya yang punya r522817). Server ini sempat putus
+          # di tengah unduhan 164 MB, jadi kita pakai banyak percobaan + timeout longgar.
+          URL1="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r522817.tar.gz"
+
+          unduh() {
+            local url="$1" out="clang.tar.gz"
+            local i
+            for i in 1 2 3 4 5 6; do
+              echo "  percobaan $i: $url"
+              # PENTING: hapus file rusak dulu. -C - TIDAK dipakai karena
+              # android.googlesource.com tidak mendukung byte range (curl error 33).
+              rm -f "$out"
+              if curl -fL --retry 2 --retry-delay 5 --connect-timeout 30 --max-time 1200 \
+                   --speed-limit 10240 --speed-time 30 \
+                   -o "$out" "$url"; then
+                local sz
+                sz=$(stat -c%s "$out" 2>/dev/null || echo 0)
+                # clang r522817 ~ 164 MB. Tolak file kecil (halaman error HTML).
+                if [ "$sz" -gt 100000000 ] && gzip -t "$out" 2>/dev/null; then
+                  echo "  OK: $(($sz/1048576)) MB"
+                  return 0
+                fi
+                echo "  file tidak valid ($(($sz/1024)) KB) — ulangi"
+              else
+                echo "  curl gagal (exit $?) — ulangi"
+              fi
+              sleep 10
+            done
+            return 1
+          }
+
+          if ! unduh "$URL1"; then
+            echo "UNDUH CLANG GAGAL setelah 6 percobaan (jaringan GitHub runner putus)"
+            exit 1
+          fi
+
+          echo "ukuran final: $(stat -c%s clang.tar.gz) byte"
+          mkdir -p clang
+          tar xzf clang.tar.gz -C clang --strip-components=1 2>/dev/null || tar xzf clang.tar.gz -C clang
+          # kalau struktur bersarang (mirror GitHub), cari bin/clang
+          if [ ! -x clang/bin/clang ]; then
+            inner=$(find clang -maxdepth 3 -type f -name clang -path "*/bin/*" | head -1)
+            if [ -n "$inner" ]; then
+              d=$(dirname "$(dirname "$inner")")
+              echo "menyesuaikan struktur: $d"
+              rm -rf clang && mv "$d" clang
+            fi
+          fi
+          clang/bin/clang --version | head -2
 
       - name: Build kernel (blu_spark defconfig, KSU off)
         run: |
