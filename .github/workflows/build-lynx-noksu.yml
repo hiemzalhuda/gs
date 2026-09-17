@@ -77,16 +77,18 @@ jobs:
 
           echo "ukuran final: $(stat -c%s clang.tar.gz) byte"
           mkdir -p clang
-          tar xzf clang.tar.gz -C clang --strip-components=1 2>/dev/null || tar xzf clang.tar.gz -C clang
-          # kalau struktur bersarang (mirror GitHub), cari bin/clang
+          # PENTING: archive googlesource itu FLAT — isinya langsung bin/, lib/, include/
+          # di root. JANGAN pakai --strip-components=1: itu membuang bin/ sehingga
+          # clang/bin/clang tidak ada, build diam-diam jatuh ke clang Ubuntu bawaan
+          # (kejadian di build #14: hasilnya clang 14, bukan clang Android 18).
+          tar xzf clang.tar.gz -C clang
+          # verifikasi WAJIB — gagal di sini lebih baik daripada dapat kernel salah toolchain
           if [ ! -x clang/bin/clang ]; then
-            inner=$(find clang -maxdepth 3 -type f -name clang -path "*/bin/*" | head -1)
-            if [ -n "$inner" ]; then
-              d=$(dirname "$(dirname "$inner")")
-              echo "menyesuaikan struktur: $d"
-              rm -rf clang && mv "$d" clang
-            fi
+            echo "GAGAL: clang/bin/clang tidak ada setelah ekstrak"
+            ls clang | head -20
+            exit 1
           fi
+          echo "=== clang terpasang ==="
           clang/bin/clang --version | head -2
 
       - name: Build kernel (blu_spark defconfig, KSU off)
@@ -100,6 +102,19 @@ jobs:
           # full-LLVM: tanpa CROSS_COMPILE gcc (gcc 4.9 terlalu tua, bikin __stack_chk_guard hilang)
           export KBUILD_BUILD_USER=blu_spark-noksu
           export KBUILD_BUILD_HOST=github
+          # VERIFIKASI TOOLCHAIN: pastikan clang yang dipakai benar-benar clang Android,
+          # bukan clang Ubuntu bawaan runner (kejadian build #14: kernel ter-build
+          # dengan clang 14 Ubuntu -> bukan toolchain yang diinginkan).
+          echo "=== toolchain check ==="
+          which clang || { echo "GAGAL: clang tidak di PATH"; exit 1; }
+          clang --version | head -1
+          if ! clang --version | head -1 | grep -q "Android"; then
+            echo "GAGAL: yang terpakai BUKAN clang Android (kemungkinan clang Ubuntu runner)"
+            echo "PATH=$PATH"
+            exit 1
+          fi
+          echo "toolchain OK (clang Android)"
+
           make O=out ARCH=arm64 blu_spark_defconfig
           ./scripts/config --file out/.config -d KSU || true
           set +e
