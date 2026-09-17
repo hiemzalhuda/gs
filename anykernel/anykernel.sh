@@ -1,22 +1,23 @@
 ### AnyKernel3 Ramdisk Mod Script
 ## osm0sis @ xda-developers
-## Template Pixel 7 / 7a (lynx) — A/B device
+## Template Pixel 7 / 7a (lynx) — A/B device, KERNEL-ONLY zip
 ##
-## KENAPA FILE INI ADA DI REPO:
-## anykernel.sh bawaan AnyKernel3 itu contoh untuk Galaxy Nexus (tuna):
-##   BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot   <- hardware TI OMAP, BUKAN Pixel
-##   IS_SLOT_DEVICE=0                                           <- Pixel itu A/B device
-## Kalau dipakai apa adanya di Pixel: partisi boot tidak ketemu -> gagal flash / boot rusak.
+## ============================================================================
+## JANGAN pakai BLOCK=auto di Pixel!
+##   tools/ak3-core.sh:  auto) parttype="$plistinit $plistboot";;
+##   plistinit="init_boot ramdisk"  <- DICOBA DULU
+##   plistboot="boot BOOT ..."      <- baru ini
+## Jadi BLOCK=auto menulis kernel (~49 MB) ke partisi init_boot (kecil) ->
+## ERROR "image larger than partition" dan instalasi ABORT.
+## Insiden 16/9: build pertama pakai auto, gagal pas flash di OrangeFox.
 ##
-## CARA KERJA DI PIXEL:
-## - AK3 mendeteksi partisi lewat nama (BLOCK=auto) dan menambahkan suffix slot aktif (_a/_b).
-## - Mode multi-partisi (boot + init_boot + vendor_kernel_boot) HANYA aktif otomatis kalau
-##   ada FILE bernama persis "dtb" di root ZIP (lihat tools/ak3-core.sh). Kernel Pixel
-##   biasanya tidak menghasilkan dtb dari source, jadi mode itu sering tidak aktif — dan itu
-##   TIDAK masalah: kernel (Image.lz4) tetap ditulis ke partisi boot.
-## - Ramdisk di Pixel 7 ada di init_boot, TAPI kita TIDAK mengubah ramdisk (kernel-only zip),
-##   jadi bagian init_boot tidak perlu disentuh. Membiarkannya lebih aman daripada menulis
-##   ramdisk kosong ke init_boot.
+## Yang benar: BLOCK=boot (eksplisit), biarkan IS_SLOT_DEVICE yang menambahkan
+## suffix slot aktif (_a/_b).
+## ============================================================================
+##
+## anykernel.sh bawaan AnyKernel3 juga TIDAK bisa dipakai langsung (contohnya
+## Galaxy Nexus: BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot,
+## IS_SLOT_DEVICE=0) — partisi boot Pixel tidak akan ketemu.
 
 ### AnyKernel setup
 properties() { '
@@ -42,9 +43,9 @@ set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
 } # end attributes
 
 # boot shell variables
-# BLOCK=auto          -> AK3 cari partisi boot sendiri (nama-based, bukan jalur hardcoded tuna)
+# BLOCK=boot          -> EKSPLISIT, jangan auto (auto memilih init_boot lebih dulu -> gagal)
 # IS_SLOT_DEVICE=auto -> deteksi suffix slot aktif (_a/_b). WAJIB di Pixel (A/B device).
-BLOCK=auto;
+BLOCK=boot;
 IS_SLOT_DEVICE=auto;
 RAMDISK_COMPRESSION=auto;
 PATCH_VBMETA_FLAG=auto;
@@ -53,9 +54,8 @@ PATCH_VBMETA_FLAG=auto;
 . tools/ak3-core.sh;
 
 # --- tulis kernel (Image.lz4) ke partisi boot ---
-# split_boot: di Pixel ramdisk tidak ada di boot, jadi tidak perlu unpack/repack.
-# Kalau build menghasilkan dtb, AK3 sudah otomatis mengatur mode multi-partisi sendiri
-# dan baris ini tetap berfungsi (menulis bagian boot).
+# split_boot: di Pixel ramdisk TIDAK ada di boot (ada di init_boot), jadi tidak perlu
+# unpack/repack ramdisk. Ini bikin proses lebih cepat dan tidak menyentuh ramdisk ROM.
 split_boot;
 flash_boot;
 ## end boot install
