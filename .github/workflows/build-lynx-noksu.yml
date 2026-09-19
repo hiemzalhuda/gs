@@ -1,9 +1,9 @@
-name: Build blu_spark no-KSU battery (lynx/Pixel 7a)
+name: Build blu_spark KSU battery (lynx/Pixel 7a)
 
 on:
   workflow_dispatch:
   push:
-    branches: [no-ksu-battery]
+    branches: [ksu-battery]
     paths:
       - '.github/workflows/build-lynx-noksu.yml'
       - 'arch/arm64/configs/blu_spark_defconfig'
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
-          ref: no-ksu-battery
+          ref: ksu-battery
           fetch-depth: 1
 
       - name: Free disk space
@@ -91,7 +91,7 @@ jobs:
           echo "=== clang terpasang ==="
           clang/bin/clang --version | head -2
 
-      - name: Build kernel (blu_spark defconfig, KSU off)
+      - name: Build kernel (blu_spark defconfig, KSU ON + battery)
         run: |
           cd $GITHUB_WORKSPACE
           export ARCH=arm64
@@ -100,7 +100,7 @@ jobs:
           export CLANG_TRIPLE=aarch64-linux-gnu-
           export LLVM=1 LLVM_IAS=1
           # full-LLVM: tanpa CROSS_COMPILE gcc (gcc 4.9 terlalu tua, bikin __stack_chk_guard hilang)
-          export KBUILD_BUILD_USER=blu_spark-noksu
+          export KBUILD_BUILD_USER=blu_spark-ksu
           export KBUILD_BUILD_HOST=github
           # VERIFIKASI TOOLCHAIN: pastikan clang yang dipakai benar-benar clang Android,
           # bukan clang Ubuntu bawaan runner (kejadian build #14: kernel ter-build
@@ -116,7 +116,19 @@ jobs:
           echo "toolchain OK (clang Android)"
 
           make O=out ARCH=arm64 blu_spark_defconfig
-          ./scripts/config --file out/.config -d KSU || true
+          # KSU DIAKTIFKAN (branch ksu-battery). Verifikasi wajib: kalau KSU tidak
+          # aktif, kernel yang dihasilkan tidak punya root dan tidak ada gunanya.
+          ./scripts/config --file out/.config -e KSU || true
+          ./scripts/config --file out/.config -e KPROBES || true
+          ./scripts/config --file out/.config --set-str LOCALVERSION "-hiemz-bilal" || true
+          echo "=== verifikasi KSU di .config ==="
+          grep -E "^CONFIG_KSU=|^CONFIG_KPROBES=|^CONFIG_HZ=|^CONFIG_WQ_POWER_EFFICIENT" out/.config || true
+          if ! grep -q "^CONFIG_KSU=y" out/.config; then
+            echo "GAGAL: CONFIG_KSU tidak aktif di .config — kernel tanpa root"
+            exit 1
+          fi
+          echo "KSU AKTIF ✓"
+          make O=out ARCH=arm64 olddefconfig 2>&1 | tail -3
           set +e
           make -j$(nproc) O=out ARCH=arm64 Image.lz4 dtbs 2>&1 | tee $GITHUB_WORKSPACE/build-error.log | grep -i -m5 "error:" || true
           ls -la out/arch/arm64/boot/Image.lz4 2>/dev/null || (echo "===BUILD-GAGAL, 40 baris error:==="; grep -i -m40 "error" $GITHUB_WORKSPACE/build-error.log | head -40; exit 1)
@@ -156,17 +168,17 @@ jobs:
 
           rm -f ramdisk/placeholder modules/system/lib/modules/placeholder 2>/dev/null || true
 
-          zip -r9 $GITHUB_WORKSPACE/blu_spark-noksu-lynx.zip . -x .git/\*
+          zip -r9 $GITHUB_WORKSPACE/blu_spark-ksu-lynx.zip . -x .git/\*
           cd $GITHUB_WORKSPACE
           echo "=== isi ZIP ==="
-          unzip -l blu_spark-noksu-lynx.zip | head -22
-          ls -la blu_spark-noksu-lynx.zip
+          unzip -l blu_spark-ksu-lynx.zip | head -22
+          ls -la blu_spark-ksu-lynx.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: blu_spark-noksu-lynx
-          path: blu_spark-noksu-lynx.zip
+          name: blu_spark-ksu-lynx
+          path: blu_spark-ksu-lynx.zip
           retention-days: 14
 
       - name: Upload build log (selalu, biar gampang debug)

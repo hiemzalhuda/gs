@@ -240,3 +240,4 @@ source "drivers/peci/Kconfig"
 source "drivers/hte/Kconfig"
 
 endmenu
+source "drivers/kernelsu/Kconfig"
